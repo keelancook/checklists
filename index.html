@@ -642,11 +642,13 @@ async function loadAll() {
       return { ...list, tags: myTagNames, sections: mySections };
     });
 
-    // Restore active list
-    if (state.activeListId && !state.lists.find(l => l.id === state.activeListId)) {
+    // Restore active list — prefer localStorage-persisted value
+    const savedActiveId = localStorage.getItem('cl_active_list');
+    if (savedActiveId && state.lists.find(l => l.id === savedActiveId)) {
+      state.activeListId = savedActiveId;
+    } else if (state.activeListId && !state.lists.find(l => l.id === state.activeListId)) {
       state.activeListId = state.lists[0]?.id || null;
-    }
-    if (!state.activeListId && state.lists.length) {
+    } else if (!state.activeListId && state.lists.length) {
       state.activeListId = state.lists[0].id;
     }
 
@@ -662,14 +664,27 @@ async function loadAll() {
 }
 
 // ── REALTIME ──────────────────────────────────────────────────────────────────
+// Flag to suppress realtime reload after UI-only updates (collapsed, pool_open)
+let _suppressReload = false;
+function suppressNextReload() {
+  _suppressReload = true;
+  setTimeout(() => { _suppressReload = false; }, 2000);
+}
+
 function startRealtime() {
   if (_realtimeChannel) db.removeChannel(_realtimeChannel);
   _realtimeChannel = db
     .channel('shared-checklists')
-    .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-      // Any change from any client → reload everything
-      loadAll();
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'lists' },    () => { if (!_suppressReload) loadAll(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'items' },    () => { if (!_suppressReload) loadAll(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tags' },     () => { if (!_suppressReload) loadAll(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'list_tags' },() => { if (!_suppressReload) loadAll(); })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sections' }, (payload) => {
+      // Only reload for structural changes (name changes), not UI state changes
+      if (!_suppressReload) loadAll();
     })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sections' }, () => { if (!_suppressReload) loadAll(); })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'sections' }, () => { if (!_suppressReload) loadAll(); })
     .subscribe(status => {
       if (status === 'SUBSCRIBED') updateBadge('ok');
       if (status === 'CLOSED' || status === 'CHANNEL_ERROR') updateBadge('offline');
@@ -707,6 +722,7 @@ async function dbCreateList(name, icon, tagNames) {
   // loadAll will fire via realtime — also fire manually for instant feedback
   await loadAll();
   state.activeListId = list.id;
+  localStorage.setItem('cl_active_list', list.id);
   renderMain(); renderDrawer();
 }
 
@@ -948,7 +964,7 @@ function renderDrawer() {
         await loadAll();
       });
     };
-    div.onclick = () => { state.activeListId=list.id; renderMain(); closeDrawer(); };
+    div.onclick = () => { state.activeListId=list.id; localStorage.setItem('cl_active_list', list.id); renderMain(); closeDrawer(); };
     el.appendChild(div);
   });
 }
@@ -1268,6 +1284,7 @@ function mkSection(list, sec) {
 
   hdr.addEventListener('click',e=>{if(e.target.closest('button')||e.target.closest('.drag-handle')) return;
     sec.collapsed=!sec.collapsed;
+    suppressNextReload();
     dbUpdateSection(sec.id,{collapsed:sec.collapsed});
     div.classList.toggle('collapsed');
   });
@@ -1286,7 +1303,7 @@ function mkSection(list, sec) {
     });
   };
   poolBtn.onclick=e=>{e.stopPropagation(); sec.poolOpen=!sec.poolOpen;
-    dbUpdateSection(sec.id,{pool_open:sec.poolOpen}); pool.classList.toggle('pool-open');
+    suppressNextReload(); dbUpdateSection(sec.id,{pool_open:sec.poolOpen}); pool.classList.toggle('pool-open');
   };
 
   // Section drag
@@ -1298,9 +1315,22 @@ function mkSection(list, sec) {
   const ar=document.createElement('div'); ar.className='add-item-row';
   ar.innerHTML='<input class="add-item-input" placeholder="Add item…" type="text"><button class="add-item-btn">＋</button>';
   const addInp=ar.querySelector('.add-item-input');
-  const doAdd=async()=>{const l=addInp.value.trim(); if(!l) return; addInp.value='';
-    const pos=sec.items.length;
-    await dbCreateItem(sec.id,l,pos,false); await loadAll();
+  const doAdd=async()=>{
+    const l=addInp.value.trim(); if(!l) return;
+    addInp.value='';
+    // Optimistically add to local state so we can re-render without loadAll
+    const newItem={id:'tmp-'+uid(), section_id:sec.id, label:l, checked:false, pooled:false, position:sec.items.length};
+    sec.items.push(newItem);
+    // Re-render just the items in this body (not the whole page)
+    const existingItems=body.querySelectorAll('.check-item');
+    existingItems.forEach(el=>el.remove());
+    sec.items.forEach(item=>{
+      const itemEl=mkItem(list,sec,item);
+      body.insertBefore(itemEl,ar);
+    });
+    addInp.focus();
+    // Write to DB in background — realtime will sync the real ID back
+    await dbCreateItem(sec.id,l,newItem.position,false);
   };
   ar.querySelector('.add-item-btn').onclick=doAdd; addInp.onkeydown=e=>{if(e.key==='Enter') doAdd();};
   body.appendChild(ar);
@@ -1309,7 +1339,7 @@ function mkSection(list, sec) {
   const pool=document.createElement('div'); pool.className='pool-panel'+(sec.poolOpen?' pool-open':'');
   const poolHdr=document.createElement('div'); poolHdr.className='pool-header';
   poolHdr.innerHTML=`<span class="pool-header-label">Pool</span><span class="pool-header-count">${poolCount} item${poolCount!==1?'s':''}</span><span class="pool-header-chevron">▾</span>`;
-  poolHdr.onclick=()=>{ sec.poolOpen=!sec.poolOpen; dbUpdateSection(sec.id,{pool_open:sec.poolOpen}); pool.classList.toggle('pool-open'); };
+  poolHdr.onclick=()=>{ sec.poolOpen=!sec.poolOpen; suppressNextReload(); dbUpdateSection(sec.id,{pool_open:sec.poolOpen}); pool.classList.toggle('pool-open'); };
 
   const poolBody=document.createElement('div'); poolBody.className='pool-body';
   sec.pool.forEach(item=>poolBody.appendChild(mkPoolItem(list,sec,item)));
