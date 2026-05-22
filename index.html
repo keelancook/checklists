@@ -192,39 +192,46 @@ body { font-family: 'DM Mono', monospace; background: var(--paper); color: var(-
 /* SECTION */
 .section { background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 14px; overflow: hidden; box-shadow: 0 1px 4px var(--shadow); }
 .section-head {
-  display: flex; align-items: center; gap: 8px; padding: 11px 14px;
+  display: flex; align-items: center; gap: 8px; padding: 13px 14px;
   background: var(--paper2); cursor: pointer; user-select: none; border-bottom: 1px solid var(--border);
+  transition: background 0.4s ease, border-color 0.4s ease;
 }
+.section-head.all-done {
+  background: #eaf4ee;
+  border-bottom-color: #b6dfc4;
+}
+.section-head.all-done .section-name { color: #2d6a4f; }
+.section-head.all-done .section-count { color: #2d6a4f; opacity: 0.7; }
 .section-chevron { font-size: 10px; color: var(--muted); transition: transform 0.2s; }
 .section.collapsed .section-chevron { transform: rotate(-90deg); }
 .section-name { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); font-weight: 500; flex: 1; }
 .section-name-input { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); background: none; border: none; border-bottom: 1px solid var(--accent); outline: none; flex: 1; font-family: 'DM Mono', monospace; }
 .section-count { font-size: 9px; color: var(--muted); }
-.sec-btn { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 13px; padding: 2px 5px; border-radius: 4px; }
+.sec-btn { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 13px; padding: 8px 8px; border-radius: 6px; min-width: 36px; min-height: 36px; display: flex; align-items: center; justify-content: center; }
 .sec-btn:hover { background: var(--border); }
 .section-body { padding: 4px 0; }
 .section.collapsed .section-body { display: none; }
 
 /* CHECK ITEMS */
-.check-item { display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-bottom: 1px solid var(--border); }
+.check-item { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-bottom: 1px solid var(--border); }
 .check-item:last-child { border-bottom: none; }
 .check-item.checked .item-label { text-decoration: line-through; color: var(--muted); }
 .custom-check {
-  width: 20px; height: 20px; flex-shrink: 0; border: 1.5px solid var(--border);
-  border-radius: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center;
-  font-size: 11px; color: transparent; transition: all 0.15s; background: var(--paper);
+  width: 26px; height: 26px; flex-shrink: 0; border: 1.5px solid var(--border);
+  border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; color: transparent; transition: all 0.15s; background: var(--paper);
 }
 .check-item.checked .custom-check { background: var(--accent2); border-color: var(--accent2); color: white; }
 .item-label { flex: 1; font-size: 13px; line-height: 1.4; color: var(--ink); }
 .item-label-input { flex: 1; background: none; border: none; border-bottom: 1px solid var(--accent); color: var(--ink); outline: none; font-family: 'DM Mono', monospace; font-size: 13px; }
 .item-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
 .check-item:hover .item-actions { opacity: 1; }
-.item-btn { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 13px; padding: 3px 5px; border-radius: 4px; }
+.item-btn { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 13px; padding: 8px 8px; border-radius: 6px; min-width: 36px; min-height: 36px; display: flex; align-items: center; justify-content: center; }
 .item-btn:hover { background: var(--paper2); }
 
 /* ADD ROW */
-.add-item-row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-top: 1px dashed var(--border); }
-.add-item-input { flex: 1; background: none; border: none; color: var(--ink); outline: none; font-family: 'DM Mono', monospace; font-size: 13px; }
+.add-item-row { display: flex; align-items: center; gap: 10px; padding: 13px 14px; border-top: 1px dashed var(--border); }
+.add-item-input { flex: 1; background: none; border: none; color: var(--ink); outline: none; font-family: 'DM Mono', monospace; font-size: 15px; }
 .add-item-input::placeholder { color: var(--muted); }
 .add-item-btn { background: none; border: none; cursor: pointer; color: var(--accent); font-size: 18px; padding: 2px 4px; }
 .add-section-row { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 12px; background: none; border: 1px dashed var(--border); border-radius: 10px; color: var(--muted); cursor: pointer; font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.08em; transition: all 0.15s; margin-bottom: 14px; }
@@ -610,6 +617,9 @@ function updateBadge(status) {
 
 // ── LOAD ALL DATA ─────────────────────────────────────────────────────────────
 async function loadAll() {
+  // Don't re-render if user is actively typing — avoids keyboard dismissal
+  const active = document.activeElement;
+  const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
   updateBadge('syncing');
   try {
     const [
@@ -653,9 +663,11 @@ async function loadAll() {
     }
 
     updateBadge('ok');
-    renderMain();
-    renderTagDropdown();
-    renderDrawer();
+    if (!isTyping) {
+      renderMain();
+      renderTagDropdown();
+      renderDrawer();
+    }
   } catch(e) {
     console.error('Load error:', e);
     updateBadge('err');
@@ -1269,7 +1281,8 @@ function mkSection(list, sec) {
   const div=document.createElement('div'); div.className='section'+(sec.collapsed?' collapsed':''); div.dataset.secId=sec.id;
   const activeItems=sec.items||[], chk=activeItems.filter(i=>i.checked).length, poolCount=sec.pool.length;
 
-  const hdr=document.createElement('div'); hdr.className='section-head';
+  const allDone = activeItems.length > 0 && activeItems.every(i => i.checked);
+  const hdr=document.createElement('div'); hdr.className='section-head' + (allDone ? ' all-done' : '');
   const chevron=document.createElement('span'); chevron.className='section-chevron'; chevron.textContent='▾';
   const nameEl=document.createElement('span'); nameEl.className='section-name'; nameEl.textContent=sec.name;
   const countEl=document.createElement('span'); countEl.className='section-count'; countEl.textContent=chk+'/'+activeItems.length;
@@ -1400,14 +1413,32 @@ function mkItem(list, sec, item) {
   acts.appendChild(eb); acts.appendChild(pb); acts.appendChild(db2);
   div.appendChild(chk); div.appendChild(lbl); div.appendChild(acts); div.appendChild(grip);
 
-  // Long-press to pool
-  let pressTimer=null;
-  div.addEventListener('pointerdown',e=>{if(e.target.closest('.drag-handle')||e.target.closest('button')) return;
-    pressTimer=setTimeout(async()=>{ await dbUpdateItem(item.id,{pooled:true,checked:false}); await dbUpdateSection(sec.id,{pool_open:true}); await loadAll(); toast('"'+item.label+'" moved to pool'); },600);
+  // Long-press on LABEL → inline edit (500ms)
+  let editTimer=null, poolTimer=null, moved=false;
+  lbl.addEventListener('pointerdown', e=>{
+    moved=false;
+    editTimer=setTimeout(()=>{
+      // Trigger the edit button action
+      eb.onclick();
+    }, 500);
   });
-  div.addEventListener('pointerup',()=>clearTimeout(pressTimer));
-  div.addEventListener('pointerleave',()=>clearTimeout(pressTimer));
-  div.addEventListener('pointermove',()=>clearTimeout(pressTimer));
+  lbl.addEventListener('pointermove', ()=>{ moved=true; clearTimeout(editTimer); });
+  lbl.addEventListener('pointerup',   ()=>clearTimeout(editTimer));
+  lbl.addEventListener('pointerleave',()=>clearTimeout(editTimer));
+
+  // Long-press on row body (not label, not button, not handle) → pool (700ms)
+  div.addEventListener('pointerdown',e=>{
+    if(e.target.closest('.drag-handle')||e.target.closest('button')||e.target.closest('.item-label')) return;
+    moved=false;
+    poolTimer=setTimeout(async()=>{
+      await dbUpdateItem(item.id,{pooled:true,checked:false});
+      await dbUpdateSection(sec.id,{pool_open:true});
+      suppressNextReload(); await loadAll(); toast('"'+item.label+'" moved to pool');
+    }, 700);
+  });
+  div.addEventListener('pointerup',   ()=>clearTimeout(poolTimer));
+  div.addEventListener('pointerleave',()=>clearTimeout(poolTimer));
+  div.addEventListener('pointermove', ()=>clearTimeout(poolTimer));
 
   // Item drag
   makeDraggable(grip, div, ()=>sec.items, async()=>{ await dbReorderItems(sec.items); });
